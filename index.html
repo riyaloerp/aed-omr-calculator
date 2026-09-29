@@ -42,6 +42,39 @@
   .del{border:none;background:none;color:var(--mute);font-size:18px;padding:0 6px}
   .del:hover{color:#c0392b}
   .note{font-size:12px;color:var(--mute);margin-top:8px}
+
+  /* Mobile: each row becomes a card that fits the screen, no sideways scroll */
+  @media (max-width:760px){
+    main{padding:10px 10px 30px}
+    .card{padding:10px}
+    .settings{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .settings input{width:100%}
+    .wrap{overflow:visible}
+    table{min-width:0}
+    thead{display:none}
+    tbody,tfoot{display:block}
+    tr{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;position:relative}
+    td{display:flex;flex-direction:column;align-items:stretch;gap:2px;border:none;padding:0;text-align:left;white-space:normal;font-size:15px}
+    td input,td.name input{min-width:0;text-align:left;font-size:16px}
+    td::before{font-size:11px;font-weight:400;color:var(--mute);text-transform:uppercase}
+    td:nth-child(1){grid-column:1/-1;padding-right:32px}
+    td:nth-child(1)::before{content:'Item'}
+    td:nth-child(2)::before{content:'Price AED'}
+    td:nth-child(3)::before{content:'AED + VAT'}
+    td:nth-child(4)::before{content:'OMR'}
+    td:nth-child(5)::before{content:'Extra OMR'}
+    td:nth-child(6)::before{content:'Total OMR'}
+    td:nth-child(7)::before{content:'Profit %'}
+    td:nth-child(8)::before{content:'Markup profit'}
+    td:nth-child(9)::before{content:'Markup selling'}
+    td:nth-child(10)::before{content:'GP profit'}
+    td:nth-child(11)::before{content:'GP selling'}
+    td:nth-child(12){position:absolute;top:6px;right:2px}
+    td:nth-child(12)::before{content:none}
+    tfoot tr{background:var(--brand2);border-color:var(--brand)}
+    tfoot td{background:none}
+    tfoot td:nth-child(1)::before,tfoot td:nth-child(12){display:none}
+  }
 </style>
 </head>
 <body>
