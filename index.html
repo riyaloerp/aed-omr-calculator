@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AED → OMR Pricing</title>
+<meta name="theme-color" content="#0f5b4f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+  :root{--bg:#f4f6f5;--card:#fff;--ink:#1c2422;--mute:#65706d;--line:#dde3e1;--brand:#0f5b4f;--brand2:#e8f2ef;--in:#fffbea;--pos:#0f7a3d;}
+  @media (prefers-color-scheme:dark){:root{--bg:#121716;--card:#1b2220;--ink:#e6ecea;--mute:#98a4a0;--line:#2c3532;--brand:#3fb39b;--brand2:#1f2e2a;--in:#2a2716;--pos:#5fd08d;}}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  header{background:var(--brand);color:#fff;padding:14px 16px}
+  header h1{margin:0;font-size:18px}
+  header p{margin:2px 0 0;opacity:.85;font-size:12px}
+  main{padding:12px 16px 40px;max-width:1400px;margin:auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+  .settings{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+  .settings label{display:flex;flex-direction:column;font-size:12px;color:var(--mute);gap:4px}
+  input{font:inherit;color:var(--ink);background:var(--in);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+  .settings input{width:110px}
+  input:focus{outline:2px solid var(--brand);outline-offset:-1px}
+  button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:6px;padding:7px 12px;cursor:pointer}
+  button.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  .wrap{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;min-width:1150px}
+  th,td{border-bottom:1px solid var(--line);padding:6px;text-align:right;white-space:nowrap}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--mute);background:var(--brand2)}
+  th.grp{text-align:center;color:var(--brand)}
+  td:first-child,th:first-child{text-align:left}
+  td input{text-align:right;min-width:80px}
+  td.name input{text-align:left;min-width:150px}
+  td.calc{font-variant-numeric:tabular-nums}
+  td.total{font-weight:600}
+  td.profit{color:var(--pos);font-weight:600}
+  tfoot td{font-weight:700;background:var(--brand2)}
+  .del{border:none;background:none;color:var(--mute);font-size:18px;padding:0 6px}
+  .del:hover{color:#c0392b}
+  .note{font-size:12px;color:var(--mute);margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>AED → OMR Pricing Calculator</h1>
+  <p>AED + VAT → OMR → + fixed charge → profit by Markup &amp; Gross Profit</p>
+</header>
+<main>
+  <section class="card settings">
+    <label>VAT on AED (%)<input id="vat" type="number" step="any"></label>
+    <label>AED → OMR rate<input id="rate" type="number" step="any"></label>
+    <label>Default extra (OMR)<input id="extraDef" type="number" step="any"></label>
+    <label>Default profit (%)<input id="pctDef" type="number" step="any"></label>
+  </section>
+
+  <section class="card">
+    <div class="actions">
+      <button class="primary" id="add">+ Add row</button>
+      <button id="csv">Export CSV</button>
+      <button id="clear">Clear all</button>
+    </div>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr>
+            <th colspan="7"></th>
+            <th class="grp" colspan="2">Markup</th>
+            <th class="grp" colspan="2">Gross Profit</th>
+            <th></th>
+          </tr>
+          <tr>
+            <th>Item</th><th>Price AED</th><th>AED + VAT</th><th>OMR</th><th>Extra OMR</th><th>Total OMR</th><th>Profit %</th>
+            <th>Profit amount</th><th>Selling price</th>
+            <th>Profit amount</th><th>Selling price</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+        <tfoot><tr id="foot"></tr></tfoot>
+      </table>
+    </div>
+    <p class="note">Yellow cells are editable. Edit <b>Profit %</b> or the Markup <b>Profit amount</b> — the other updates. Markup = cost × %. Gross profit = cost ÷ (1 − %) − cost. Data is saved on this device.</p>
+  </section>
+</main>
+<script>
+const KEY='aed-omr-v1';
+const $=id=>document.getElementById(id);
+let S=load();
+function load(){
+  try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.rows)return s;}catch(e){}
+  return {vat:5,rate:0.105,extraDef:3,pctDef:20,rows:[{name:'Item 1',aed:100,extra:3,pct:20}]};
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+const n=v=>{const x=parseFloat(v);return isFinite(x)?x:0};
+const f3=v=>isFinite(v)?v.toFixed(3):'—';
+const f2=v=>isFinite(v)?v.toFixed(2):'—';
+
+function calc(r){
+  const aedVat=n(r.aed)*(1+n(S.vat)/100);
+  const omr=aedVat*n(S.rate);
+  const total=omr+n(r.extra);
+  const p=n(r.pct)/100;
+  const mkAmt=total*p, mkSell=total+mkAmt;
+  const gpSell=p<1?total/(1-p):NaN, gpAmt=gpSell-total;
+  return {aedVat,omr,total,mkAmt,mkSell,gpAmt,gpSell};
+}
+
+function render(){
+  ['vat','rate','extraDef','pctDef'].forEach(k=>$(k).value=S[k]);
+  const tb=$('rows');tb.innerHTML='';
+  S.rows.forEach((r,i)=>{
+    const tr=document.createElement('tr');tr.dataset.i=i;
+    tr.innerHTML=`
+      <td class="name"><input data-k="name" value="${esc(r.name)}"></td>
+      <td><input data-k="aed" type="number" step="any" inputmode="decimal" value="${esc(r.aed)}"></td>
+      <td class="calc" data-c="aedVat"></td>
+      <td class="calc" data-c="omr"></td>
+      <td><input data-k="extra" type="number" step="any" inputmode="decimal" value="${esc(r.extra)}"></td>
+      <td class="calc total" data-c="total"></td>
+      <td><input data-k="pct" type="number" step="any" inputmode="decimal"></td>
+      <td><input data-k="mkAmt" type="number" step="any" inputmode="decimal"></td>
+      <td class="calc" data-c="mkSell"></td>
+      <td class="calc profit" data-c="gpAmt"></td>
+      <td class="calc" data-c="gpSell"></td>
+      <td><button class="del" title="Delete row">×</button></td>`;
+    tb.appendChild(tr);
+  });
+  refresh();
+}
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+function refresh(skip){
+  const T={aed:0,aedVat:0,omr:0,extra:0,total:0,mkAmt:0,mkSell:0,gpAmt:0,gpSell:0};
+  [...$('rows').children].forEach(tr=>{
+    const r=S.rows[tr.dataset.i],c=calc(r);
+    tr.querySelector('[data-c=aedVat]').textContent=f2(c.aedVat);
+    ['omr','total','mkSell','gpAmt','gpSell'].forEach(k=>tr.querySelector(`[data-c=${k}]`).textContent=f3(c[k]));
+    const mk=tr.querySelector('[data-k=mkAmt]');if(mk!==skip)mk.value=f3(c.mkAmt);
+    const pc=tr.querySelector('[data-k=pct]');if(pc!==skip)pc.value=+n(r.pct).toFixed(2);
+    T.aed+=n(r.aed);T.extra+=n(r.extra);
+    ['aedVat','omr','total','mkAmt','mkSell','gpAmt','gpSell'].forEach(k=>{if(isFinite(c[k]))T[k]+=c[k]});
+  });
+  $('foot').innerHTML=`<td>Total</td><td>${f2(T.aed)}</td><td>${f2(T.aedVat)}</td><td>${f3(T.omr)}</td><td>${f3(T.extra)}</td><td>${f3(T.total)}</td><td>${T.total?f2(T.mkAmt/T.total*100)+'%':'—'}</td><td>${f3(T.mkAmt)}</td><td>${f3(T.mkSell)}</td><td>${f3(T.gpAmt)}</td><td>${f3(T.gpSell)}</td><td></td>`;
+  save();
+}
+
+$('rows').addEventListener('input',e=>{
+  const k=e.target.dataset.k;if(!k)return;
+  const r=S.rows[e.target.closest('tr').dataset.i];
+  if(k==='mkAmt'){const t=calc(r).total;r.pct=t?n(e.target.value)/t*100:0;}
+  else r[k]=e.target.value;
+  refresh(e.target);
+});
+$('rows').addEventListener('click',e=>{
+  if(!e.target.classList.contains('del'))return;
+  S.rows.splice(e.target.closest('tr').dataset.i,1);render();
+});
+['vat','rate','extraDef','pctDef'].forEach(k=>$(k).addEventListener('input',e=>{S[k]=e.target.value;refresh();}));
+$('add').onclick=()=>{S.rows.push({name:'Item '+(S.rows.length+1),aed:0,extra:S.extraDef,pct:S.pctDef});render();
+  const ins=$('rows').lastElementChild.querySelectorAll('input');ins[1].focus();ins[1].select();};
+$('clear').onclick=()=>{if(confirm('Delete all rows?')){S.rows=[];render();}};
+$('csv').onclick=()=>{
+  const h=['Item','Price AED','AED+VAT','OMR','Extra OMR','Total OMR','Profit %','Markup profit','Markup selling','GP profit','GP selling'];
+  const lines=[h.join(',')].concat(S.rows.map(r=>{const c=calc(r);
+    return ['"'+String(r.name).replace(/"/g,'""')+'"',n(r.aed),f2(c.aedVat),f3(c.omr),f3(n(r.extra)),f3(c.total),f2(n(r.pct)),f3(c.mkAmt),f3(c.mkSell),f3(c.gpAmt),f3(c.gpSell)].join(',')}));
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));
+  a.download='aed-omr-pricing.csv';a.click();
+};
+render();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
