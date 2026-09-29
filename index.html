@@ -42,7 +42,10 @@
   .del{border:none;background:none;color:var(--mute);font-size:18px;padding:0 6px}
   .del:hover{color:#c0392b}
   .note{font-size:12px;color:var(--mute);margin-top:8px}
-
+  .paste{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--mute)}
+  textarea{font:inherit;color:var(--ink);background:var(--in);border:1px solid var(--line);border-radius:6px;padding:8px;width:100%;resize:vertical}
+  .copy{padding:4px 8px;font-size:12px}
+  .copy.ok{background:var(--brand);color:#fff;border-color:var(--brand)}
   /* Mobile: each row becomes a card that fits the screen, no sideways scroll */
   @media (max-width:760px){
     main{padding:10px 10px 30px}
@@ -57,7 +60,7 @@
     td{display:flex;flex-direction:column;align-items:stretch;gap:2px;border:none;padding:0;text-align:left;white-space:normal;font-size:15px}
     td input,td.name input{min-width:0;text-align:left;font-size:16px}
     td::before{font-size:11px;font-weight:400;color:var(--mute);text-transform:uppercase}
-    td:nth-child(1){grid-column:1/-1;padding-right:32px}
+    td:nth-child(1){grid-column:1/-1;padding-right:96px}
     td:nth-child(1)::before{content:'Item'}
     td:nth-child(2)::before{content:'Price AED'}
     td:nth-child(3)::before{content:'AED + VAT'}
@@ -68,7 +71,7 @@
     td:nth-child(8)::before{content:'Gross profit %'}
     td:nth-child(9)::before{content:'Profit OMR'}
     td:nth-child(10)::before{content:'Selling price OMR'}
-    td:nth-child(11){position:absolute;top:6px;right:2px}
+    td:nth-child(11){position:absolute;top:8px;right:4px;flex-direction:row;align-items:center}
     td:nth-child(11)::before{content:none}
     tfoot tr{background:var(--brand2);border-color:var(--brand)}
     tfoot td{background:none}
@@ -87,6 +90,13 @@
     <label>AED → OMR rate<input id="rate" type="number" step="any"></label>
     <label>Default extra (OMR)<input id="extraDef" type="number" step="any"></label>
     <label>Default markup (%)<input id="pctDef" type="number" step="any"></label>
+    <label>VAT on selling (%)<input id="outVat" type="number" step="any"></label>
+  </section>
+
+  <section class="card">
+    <label class="paste">Paste supplier quote — it's added to the list automatically
+      <textarea id="paste" rows="3" placeholder="Paste product details with the AED price here…"></textarea></label>
+    <div class="actions" style="margin:8px 0 0"><button id="pasteAdd">Add from text</button><span id="pasteMsg" class="note" style="margin:0;align-self:center"></span></div>
   </section>
 
   <section class="card">
@@ -117,9 +127,11 @@ let S=load();
 function load(){
   try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.rows){
     s.rows.forEach(r=>{if(!r.mode){r.mode='mk';r.val=r.pct;}}); // old saves: pct was markup %
+    s.outVat??=5;
     return s;}}catch(e){}
-  return {vat:5,rate:0.105,extraDef:3,pctDef:20,rows:[{name:'Item 1',aed:100,extra:3,mode:'mk',val:20}]};
+  return {vat:5,rate:0.105,extraDef:3,pctDef:20,outVat:5,rows:[{name:'Item 1',aed:100,extra:3,mode:'mk',val:20}]};
 }
+const SETTINGS=['vat','rate','extraDef','pctDef','outVat'];
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
 const n=v=>{const x=parseFloat(v);return isFinite(x)?x:0};
 const f3=v=>isFinite(v)?v.toFixed(3):'—';
@@ -139,7 +151,7 @@ const FIELDS={mk:f2,gp:f2,amt:f3,sell:f3}; // editable result inputs and their f
 const VAL={mk:'mk',gp:'gp',amt:'profit',sell:'sell'};
 
 function render(){
-  ['vat','rate','extraDef','pctDef'].forEach(k=>$(k).value=S[k]);
+  SETTINGS.forEach(k=>$(k).value=S[k]);
   const tb=$('rows');tb.innerHTML='';
   S.rows.forEach((r,i)=>{
     const tr=document.createElement('tr');tr.dataset.i=i;
@@ -154,7 +166,7 @@ function render(){
       <td><input data-k="gp" type="number" step="any" inputmode="decimal"></td>
       <td><input data-k="amt" type="number" step="any" inputmode="decimal"></td>
       <td><input data-k="sell" type="number" step="any" inputmode="decimal"></td>
-      <td><button class="del" title="Delete row">×</button></td>`;
+      <td><button class="copy" title="Copy product details with selling price + VAT">Copy</button><button class="del" title="Delete row">×</button></td>`;
     tb.appendChild(tr);
   });
   refresh();
@@ -183,10 +195,40 @@ $('rows').addEventListener('input',e=>{
 });
 $('rows').addEventListener('change',()=>refresh()); // tidy number formats when leaving a field
 $('rows').addEventListener('click',e=>{
-  if(!e.target.classList.contains('del'))return;
-  S.rows.splice(e.target.closest('tr').dataset.i,1);render();
+  const tr=e.target.closest('tr');if(!tr)return;
+  if(e.target.classList.contains('del')){S.rows.splice(tr.dataset.i,1);render();}
+  if(e.target.classList.contains('copy')){const b=e.target;copyText(quoteText(S.rows[tr.dataset.i])).then(()=>{
+    b.textContent='Copied ✓';b.classList.add('ok');setTimeout(()=>{b.textContent='Copy';b.classList.remove('ok')},1500);});}
 });
-['vat','rate','extraDef','pctDef'].forEach(k=>$(k).addEventListener('input',e=>{S[k]=e.target.value;refresh();}));
+SETTINGS.forEach(k=>$(k).addEventListener('input',e=>{S[k]=e.target.value;refresh();}));
+
+// Supplier quote → row. Finds "AED 250" or "250 AED"; that line is dropped, the rest become the product details.
+const PRICE=/AED\s*([\d,]+(?:\.\d+)?)|([\d,]+(?:\.\d+)?)\s*AED/i;
+function parseQuote(t){
+  const lines=t.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const i=lines.findIndex(l=>PRICE.test(l));if(i<0)return null;
+  const m=lines[i].match(PRICE),aed=parseFloat((m[1]||m[2]).replace(/,/g,''));
+  const rest=lines.length>1?lines.filter((_,j)=>j!==i):[lines[i].replace(m[0],'').trim()];
+  return {aed,desc:rest.join('\n'),name:(rest[0]||'Item').split(' - ')[0].slice(0,80)};
+}
+function addFromPaste(){
+  const q=parseQuote($('paste').value);
+  if(!q){$('pasteMsg').textContent='No AED price found — check the text has "AED 250" or "250 AED".';return;}
+  S.rows.push({name:q.name,desc:q.desc,aed:q.aed,extra:S.extraDef,mode:'mk',val:S.pctDef});render();
+  $('paste').value='';$('pasteMsg').textContent=`Added: ${q.name} — AED ${q.aed}`;
+  $('rows').lastElementChild.scrollIntoView({behavior:'smooth',block:'center'});
+}
+$('paste').addEventListener('paste',()=>setTimeout(addFromPaste,0));
+$('pasteAdd').onclick=addFromPaste;
+
+function quoteText(r){
+  const c=calc(r),v=n(S.outVat);
+  return `${r.desc||r.name}\n\nPrice: OMR ${f3(c.sell)} per unit + VAT ${v}%\nVAT: OMR ${f3(c.sell*v/100)}\nTotal incl. VAT: OMR ${f3(c.sell*(1+v/100))} per unit`;
+}
+async function copyText(t){
+  try{await navigator.clipboard.writeText(t);}
+  catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();}
+}
 $('add').onclick=()=>{S.rows.push({name:'Item '+(S.rows.length+1),aed:0,extra:S.extraDef,mode:'mk',val:S.pctDef});render();
   const ins=$('rows').lastElementChild.querySelectorAll('input');ins[1].focus();ins[1].select();};
 $('clear').onclick=()=>{if(confirm('Delete all rows?')){S.rows=[];render();}};
