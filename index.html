@@ -64,16 +64,15 @@
     td:nth-child(4)::before{content:'OMR'}
     td:nth-child(5)::before{content:'Extra OMR'}
     td:nth-child(6)::before{content:'Total OMR'}
-    td:nth-child(7)::before{content:'Profit %'}
-    td:nth-child(8)::before{content:'Markup profit'}
-    td:nth-child(9)::before{content:'Markup selling'}
-    td:nth-child(10)::before{content:'GP profit'}
-    td:nth-child(11)::before{content:'GP selling'}
-    td:nth-child(12){position:absolute;top:6px;right:2px}
-    td:nth-child(12)::before{content:none}
+    td:nth-child(7)::before{content:'Markup %'}
+    td:nth-child(8)::before{content:'Gross profit %'}
+    td:nth-child(9)::before{content:'Profit OMR'}
+    td:nth-child(10)::before{content:'Selling price OMR'}
+    td:nth-child(11){position:absolute;top:6px;right:2px}
+    td:nth-child(11)::before{content:none}
     tfoot tr{background:var(--brand2);border-color:var(--brand)}
     tfoot td{background:none}
-    tfoot td:nth-child(1)::before,tfoot td:nth-child(12){display:none}
+    tfoot td:nth-child(1)::before,tfoot td:nth-child(11){display:none}
   }
 </style>
 </head>
@@ -87,7 +86,7 @@
     <label>VAT on AED (%)<input id="vat" type="number" step="any"></label>
     <label>AED → OMR rate<input id="rate" type="number" step="any"></label>
     <label>Default extra (OMR)<input id="extraDef" type="number" step="any"></label>
-    <label>Default profit (%)<input id="pctDef" type="number" step="any"></label>
+    <label>Default markup (%)<input id="pctDef" type="number" step="any"></label>
   </section>
 
   <section class="card">
@@ -100,22 +99,15 @@
       <table>
         <thead>
           <tr>
-            <th colspan="7"></th>
-            <th class="grp" colspan="2">Markup</th>
-            <th class="grp" colspan="2">Gross Profit</th>
-            <th></th>
-          </tr>
-          <tr>
-            <th>Item</th><th>Price AED</th><th>AED + VAT</th><th>OMR</th><th>Extra OMR</th><th>Total OMR</th><th>Profit %</th>
-            <th>Profit amount</th><th>Selling price</th>
-            <th>Profit amount</th><th>Selling price</th><th></th>
+            <th>Item</th><th>Price AED</th><th>AED + VAT</th><th>OMR</th><th>Extra OMR</th><th>Total OMR</th>
+            <th>Markup %</th><th>Gross profit %</th><th>Profit OMR</th><th>Selling price</th><th></th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
         <tfoot><tr id="foot"></tr></tfoot>
       </table>
     </div>
-    <p class="note">Yellow cells are editable. Edit <b>Profit %</b> or the Markup <b>Profit amount</b> — the other updates. Markup = cost × %. Gross profit = cost ÷ (1 − %) − cost. Data is saved on this device.</p>
+    <p class="note">Yellow cells are editable. Type any one of <b>Markup %</b>, <b>Gross profit %</b>, <b>Profit</b> or <b>Selling price</b> — the other three calculate. Markup % = profit ÷ cost. Gross profit % = profit ÷ selling price. Data is saved on this device.</p>
   </section>
 </main>
 <script>
@@ -123,23 +115,28 @@ const KEY='aed-omr-v1';
 const $=id=>document.getElementById(id);
 let S=load();
 function load(){
-  try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.rows)return s;}catch(e){}
-  return {vat:5,rate:0.105,extraDef:3,pctDef:20,rows:[{name:'Item 1',aed:100,extra:3,pct:20}]};
+  try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.rows){
+    s.rows.forEach(r=>{if(!r.mode){r.mode='mk';r.val=r.pct;}}); // old saves: pct was markup %
+    return s;}}catch(e){}
+  return {vat:5,rate:0.105,extraDef:3,pctDef:20,rows:[{name:'Item 1',aed:100,extra:3,mode:'mk',val:20}]};
 }
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
 const n=v=>{const x=parseFloat(v);return isFinite(x)?x:0};
 const f3=v=>isFinite(v)?v.toFixed(3):'—';
 const f2=v=>isFinite(v)?v.toFixed(2):'—';
 
+// Each row remembers the one field you typed last (mode) and its value; everything else follows.
 function calc(r){
   const aedVat=n(r.aed)*(1+n(S.vat)/100);
   const omr=aedVat*n(S.rate);
   const total=omr+n(r.extra);
-  const p=n(r.pct)/100;
-  const mkAmt=total*p, mkSell=total+mkAmt;
-  const gpSell=p<1?total/(1-p):NaN, gpAmt=gpSell-total;
-  return {aedVat,omr,total,mkAmt,mkSell,gpAmt,gpSell};
+  const v=n(r.val);
+  const sell={mk:total*(1+v/100), gp:v<100?total/(1-v/100):NaN, sell:v, amt:total+v}[r.mode];
+  const profit=sell-total;
+  return {aedVat,omr,total,sell,profit,mk:total?profit/total*100:NaN,gp:sell?profit/sell*100:NaN};
 }
+const FIELDS={mk:f2,gp:f2,amt:f3,sell:f3}; // editable result inputs and their formats
+const VAL={mk:'mk',gp:'gp',amt:'profit',sell:'sell'};
 
 function render(){
   ['vat','rate','extraDef','pctDef'].forEach(k=>$(k).value=S[k]);
@@ -153,11 +150,10 @@ function render(){
       <td class="calc" data-c="omr"></td>
       <td><input data-k="extra" type="number" step="any" inputmode="decimal" value="${esc(r.extra)}"></td>
       <td class="calc total" data-c="total"></td>
-      <td><input data-k="pct" type="number" step="any" inputmode="decimal"></td>
-      <td><input data-k="mkAmt" type="number" step="any" inputmode="decimal"></td>
-      <td class="calc" data-c="mkSell"></td>
-      <td class="calc profit" data-c="gpAmt"></td>
-      <td class="calc" data-c="gpSell"></td>
+      <td><input data-k="mk" type="number" step="any" inputmode="decimal"></td>
+      <td><input data-k="gp" type="number" step="any" inputmode="decimal"></td>
+      <td><input data-k="amt" type="number" step="any" inputmode="decimal"></td>
+      <td><input data-k="sell" type="number" step="any" inputmode="decimal"></td>
       <td><button class="del" title="Delete row">×</button></td>`;
     tb.appendChild(tr);
   });
@@ -166,39 +162,38 @@ function render(){
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 
 function refresh(skip){
-  const T={aed:0,aedVat:0,omr:0,extra:0,total:0,mkAmt:0,mkSell:0,gpAmt:0,gpSell:0};
+  const T={aed:0,aedVat:0,omr:0,extra:0,total:0,profit:0,sell:0};
   [...$('rows').children].forEach(tr=>{
     const r=S.rows[tr.dataset.i],c=calc(r);
     tr.querySelector('[data-c=aedVat]').textContent=f2(c.aedVat);
-    ['omr','total','mkSell','gpAmt','gpSell'].forEach(k=>tr.querySelector(`[data-c=${k}]`).textContent=f3(c[k]));
-    const mk=tr.querySelector('[data-k=mkAmt]');if(mk!==skip)mk.value=f3(c.mkAmt);
-    const pc=tr.querySelector('[data-k=pct]');if(pc!==skip)pc.value=+n(r.pct).toFixed(2);
+    ['omr','total'].forEach(k=>tr.querySelector(`[data-c=${k}]`).textContent=f3(c[k]));
+    for(const k in FIELDS){const el=tr.querySelector(`[data-k=${k}]`);if(el!==skip)el.value=isFinite(c[VAL[k]])?FIELDS[k](c[VAL[k]]):'';}
     T.aed+=n(r.aed);T.extra+=n(r.extra);
-    ['aedVat','omr','total','mkAmt','mkSell','gpAmt','gpSell'].forEach(k=>{if(isFinite(c[k]))T[k]+=c[k]});
+    ['aedVat','omr','total','profit','sell'].forEach(k=>{if(isFinite(c[k]))T[k]+=c[k]});
   });
-  $('foot').innerHTML=`<td>Total</td><td>${f2(T.aed)}</td><td>${f2(T.aedVat)}</td><td>${f3(T.omr)}</td><td>${f3(T.extra)}</td><td>${f3(T.total)}</td><td>${T.total?f2(T.mkAmt/T.total*100)+'%':'—'}</td><td>${f3(T.mkAmt)}</td><td>${f3(T.mkSell)}</td><td>${f3(T.gpAmt)}</td><td>${f3(T.gpSell)}</td><td></td>`;
+  $('foot').innerHTML=`<td>Total</td><td>${f2(T.aed)}</td><td>${f2(T.aedVat)}</td><td>${f3(T.omr)}</td><td>${f3(T.extra)}</td><td>${f3(T.total)}</td><td>${T.total?f2(T.profit/T.total*100)+'%':'—'}</td><td>${T.sell?f2(T.profit/T.sell*100)+'%':'—'}</td><td class="profit">${f3(T.profit)}</td><td>${f3(T.sell)}</td><td></td>`;
   save();
 }
 
 $('rows').addEventListener('input',e=>{
   const k=e.target.dataset.k;if(!k)return;
   const r=S.rows[e.target.closest('tr').dataset.i];
-  if(k==='mkAmt'){const t=calc(r).total;r.pct=t?n(e.target.value)/t*100:0;}
-  else r[k]=e.target.value;
+  if(k in FIELDS){r.mode=k;r.val=e.target.value;} else r[k]=e.target.value;
   refresh(e.target);
 });
+$('rows').addEventListener('change',()=>refresh()); // tidy number formats when leaving a field
 $('rows').addEventListener('click',e=>{
   if(!e.target.classList.contains('del'))return;
   S.rows.splice(e.target.closest('tr').dataset.i,1);render();
 });
 ['vat','rate','extraDef','pctDef'].forEach(k=>$(k).addEventListener('input',e=>{S[k]=e.target.value;refresh();}));
-$('add').onclick=()=>{S.rows.push({name:'Item '+(S.rows.length+1),aed:0,extra:S.extraDef,pct:S.pctDef});render();
+$('add').onclick=()=>{S.rows.push({name:'Item '+(S.rows.length+1),aed:0,extra:S.extraDef,mode:'mk',val:S.pctDef});render();
   const ins=$('rows').lastElementChild.querySelectorAll('input');ins[1].focus();ins[1].select();};
 $('clear').onclick=()=>{if(confirm('Delete all rows?')){S.rows=[];render();}};
 $('csv').onclick=()=>{
-  const h=['Item','Price AED','AED+VAT','OMR','Extra OMR','Total OMR','Profit %','Markup profit','Markup selling','GP profit','GP selling'];
+  const h=['Item','Price AED','AED+VAT','OMR','Extra OMR','Total OMR','Markup %','Gross profit %','Profit OMR','Selling price OMR'];
   const lines=[h.join(',')].concat(S.rows.map(r=>{const c=calc(r);
-    return ['"'+String(r.name).replace(/"/g,'""')+'"',n(r.aed),f2(c.aedVat),f3(c.omr),f3(n(r.extra)),f3(c.total),f2(n(r.pct)),f3(c.mkAmt),f3(c.mkSell),f3(c.gpAmt),f3(c.gpSell)].join(',')}));
+    return ['"'+String(r.name).replace(/"/g,'""')+'"',n(r.aed),f2(c.aedVat),f3(c.omr),f3(n(r.extra)),f3(c.total),f2(c.mk),f2(c.gp),f3(c.profit),f3(c.sell)].join(',')}));
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));
   a.download='aed-omr-pricing.csv';a.click();
 };
